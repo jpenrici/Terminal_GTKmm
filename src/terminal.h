@@ -3,6 +3,7 @@
 
 #include <gtkmm-4.0/gtkmm/box.h>
 #include <gtkmm-4.0/gtkmm/button.h>
+#include <gtkmm-4.0/gtkmm/filechooserdialog.h>
 #include <gtkmm-4.0/gtkmm/label.h>
 #include <gtkmm-4.0/gtkmm/popovermenubar.h>
 #include <gtkmm-4.0/gtkmm/scrolledwindow.h>
@@ -37,6 +38,7 @@ protected:
   void on_menu_file_save();
   void on_menu_file_saveAs();
   void on_menu_help_about();
+  void on_menu_tools_clear(int operation = 0);
 
 private:
   // UI Components
@@ -57,13 +59,21 @@ private:
   Gtk::TextView m_command_input;
   Gtk::TextView m_command_output;
 
+  std::unique_ptr<Gtk::FileChooserDialog> m_pFileDialog;
+
   // Buffers
   Glib::RefPtr<Gtk::TextBuffer> m_command_input_buffer;
   Glib::RefPtr<Gtk::TextBuffer> m_command_output_buffer;
 
   // Settings
+  std::string m_path{"."};
+
   static constexpr size_t MAX_HISTORY_SIZE = 1000;
   static constexpr size_t MAX_OUTPUT_BUFFER_SIZE = 100000;
+
+  // Actions
+  auto save(std::string path, std::string text) -> bool;
+  void on_file_dialog_response(int response_id);
 };
 
 #endif // TERMINAL_H

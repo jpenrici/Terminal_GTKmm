@@ -3,6 +3,8 @@
 #include <giomm.h>
 #include <gtkmm-4.0/gtkmm/application.h>
 
+#include <fstream>
+
 Terminal::Terminal() {
   set_title("Experimental Terminal");
   set_default_size(800, 600);
@@ -30,11 +32,11 @@ void Terminal::setup_interface() {
 void Terminal::setup_signals() {
   // Button events
   m_btn_input_clear.signal_clicked().connect(
-      sigc::mem_fun(*this, &Terminal::on_btn_input_clear_clicked));
+      sigc::bind(sigc::mem_fun(*this, &Terminal::on_menu_tools_clear), 1));
   m_btn_input_execute.signal_clicked().connect(
       sigc::mem_fun(*this, &Terminal::on_execute_command));
   m_btn_output_clear.signal_clicked().connect(
-      sigc::mem_fun(*this, &Terminal::on_btn_output_clear_clicked));
+      sigc::bind(sigc::mem_fun(*this, &Terminal::on_menu_tools_clear), 2));
 }
 
 void Terminal::create_menu() {
@@ -48,11 +50,12 @@ void Terminal::create_menu() {
   menu_model->append_submenu("File", file_menu);
 
   // Execute menu
-  auto tool_menu = Gio::Menu::create();
-  tool_menu->append("Execute", "app.run");
-  tool_menu->append("Clear Input", "app.clear_input");
-  tool_menu->append("Clear Output", "app.clear_output");
-  menu_model->append_submenu("Tools", tool_menu);
+  auto tools_menu = Gio::Menu::create();
+  tools_menu->append("Execute", "app.run");
+  tools_menu->append("Clear Input", "app.clear_input");
+  tools_menu->append("Clear Output", "app.clear_output");
+  tools_menu->append("Clear All", "app.clear");
+  menu_model->append_submenu("Tools", tools_menu);
 
   // Help menu
   auto help_menu = Gio::Menu::create();
@@ -71,23 +74,80 @@ void Terminal::create_menu() {
     app->add_action("quit", sigc::mem_fun(*this, &Terminal::on_menu_file_quit));
     app->add_action("run", sigc::mem_fun(*this, &Terminal::on_execute_command));
     app->add_action(
+        "clear",
+        sigc::bind(sigc::mem_fun(*this, &Terminal::on_menu_tools_clear), 0));
+    app->add_action(
         "clear_input",
-        sigc::mem_fun(*this, &Terminal::on_btn_input_clear_clicked));
+        sigc::bind(sigc::mem_fun(*this, &Terminal::on_menu_tools_clear), 1));
     app->add_action(
         "clear_output",
-        sigc::mem_fun(*this, &Terminal::on_btn_output_clear_clicked));
+        sigc::bind(sigc::mem_fun(*this, &Terminal::on_menu_tools_clear), 2));
     app->add_action("about",
                     sigc::mem_fun(*this, &Terminal::on_menu_help_about));
   }
 }
 
-void Terminal::on_menu_file_save() {}
+void Terminal::on_menu_file_save() {
+  if (m_path.empty())
+    return;
 
-void Terminal::on_menu_file_saveAs() {}
+  auto output_text = m_command_output_buffer->get_text();
+
+  auto filename = "commands.txt";
+  if (save(m_path + filename, m_command_input_buffer->get_text())) {
+    m_info_input.set_text("Save in " + m_path + " ... " + filename);
+  } else {
+    m_info_input.set_text("There was something wrong!");
+  }
+  filename = "result.txt";
+  if (save(m_path + filename, m_command_output_buffer->get_text())) {
+    m_info_output.set_text("Save in " + m_path + " ... " + filename);
+  } else {
+    m_info_output.set_text("There was something wrong!");
+  }
+}
+
+void Terminal::on_menu_file_saveAs() {
+  if (!m_pFileDialog) {
+    m_pFileDialog.reset(new Gtk::FileChooserDialog(
+        "Select Directory", Gtk::FileChooser::Action::SELECT_FOLDER));
+    m_pFileDialog->set_transient_for(*this);
+    m_pFileDialog->set_modal(true);
+    m_pFileDialog->set_hide_on_close(true);
+    m_pFileDialog->add_button("_Cancel", Gtk::ResponseType::CANCEL);
+    m_pFileDialog->add_button("_Select", Gtk::ResponseType::ACCEPT);
+    m_pFileDialog->signal_response().connect(
+        sigc::mem_fun(*this, &Terminal::on_file_dialog_response));
+  }
+
+  m_pFileDialog->show();
+  on_menu_file_save();
+}
+
+void Terminal::on_file_dialog_response(int response_id) {
+  if (response_id == Gtk::ResponseType::ACCEPT) {
+    if (auto file = m_pFileDialog->get_file()) {
+      m_path = file->get_path();
+    }
+  }
+  m_pFileDialog->hide();
+}
 
 void Terminal::on_menu_file_quit() { close(); }
 
 void Terminal::on_menu_help_about() {}
+
+void Terminal::on_menu_tools_clear(int operation) {
+  // 0 (input and output), 1 (input), 2 (output)
+  if (operation == 0 || operation == 1) {
+    m_command_input_buffer->set_text("");
+    m_info_input.set_label("Enter a command:");
+  }
+  if (operation == 0 || operation == 2) {
+    m_command_output_buffer->set_text("");
+    m_info_output.set_label("Result:");
+  }
+}
 
 void Terminal::setup_command_area() {
   // Configure label
@@ -202,12 +262,16 @@ void Terminal::append_to_output(const std::string &text, bool is_error) {
   }
 }
 
-void Terminal::on_btn_input_clear_clicked() {
-  m_command_input_buffer->set_text("");
-  m_info_input.set_label("Enter a command:");
-}
-
-void Terminal::on_btn_output_clear_clicked() {
-  m_command_output_buffer->set_text("");
-  m_info_output.set_label("Result:");
+auto Terminal::save(std::string path, std::string text) -> bool {
+  if (!text.empty()) {
+    try {
+      std::fstream fileout;
+      fileout.open(path, std::ios::out);
+      fileout << text;
+      fileout.close();
+    } catch (...) {
+      return false;
+    }
+  }
+  return true;
 }
