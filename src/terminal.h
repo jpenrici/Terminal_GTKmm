@@ -1,6 +1,7 @@
 #ifndef TERMINAL_H
 #define TERMINAL_H
 
+#include <gtkmm-4.0/gtkmm/aboutdialog.h>
 #include <gtkmm-4.0/gtkmm/box.h>
 #include <gtkmm-4.0/gtkmm/button.h>
 #include <gtkmm-4.0/gtkmm/filechooserdialog.h>
@@ -59,6 +60,7 @@ private:
   Gtk::TextView m_command_input;
   Gtk::TextView m_command_output;
 
+  std::unique_ptr<Gtk::AboutDialog> m_pAboutDialog;
   std::unique_ptr<Gtk::FileChooserDialog> m_pFileDialog;
 
   // Buffers
@@ -66,7 +68,7 @@ private:
   Glib::RefPtr<Gtk::TextBuffer> m_command_output_buffer;
 
   // Settings
-  std::string m_path{"."};
+  std::string m_path;
 
   static constexpr size_t MAX_HISTORY_SIZE = 1000;
   static constexpr size_t MAX_OUTPUT_BUFFER_SIZE = 100000;

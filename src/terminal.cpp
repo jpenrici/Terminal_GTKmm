@@ -1,6 +1,7 @@
 #include "terminal.h"
 
 #include <giomm.h>
+#include <glib.h>
 #include <gtkmm-4.0/gtkmm/application.h>
 
 #include <fstream>
@@ -88,19 +89,35 @@ void Terminal::create_menu() {
 }
 
 void Terminal::on_menu_file_save() {
-  if (m_path.empty())
-    return;
-
+  auto input_text = m_command_input_buffer->get_text();
   auto output_text = m_command_output_buffer->get_text();
 
-  auto filename = "commands.txt";
-  if (save(m_path + filename, m_command_input_buffer->get_text())) {
+  if (input_text.empty()) {
+    m_info_input.set_label("Empty command input! Enter a command:");
+    return;
+  }
+
+  if (output_text.empty()) {
+    m_info_output.set_label("Empty output!");
+    return;
+  }
+
+  if (m_path.empty()) {
+    on_menu_file_saveAs();
+  }
+
+  g_message("[Terminal App] Path: %s", m_path.c_str());
+
+  auto filename = "terminal_commands.txt";
+  auto path = m_path + "/" + filename;
+  if (save(path, input_text)) {
     m_info_input.set_text("Save in " + m_path + " ... " + filename);
   } else {
     m_info_input.set_text("There was something wrong!");
   }
-  filename = "result.txt";
-  if (save(m_path + filename, m_command_output_buffer->get_text())) {
+  filename = "terminal_result.txt";
+  path = m_path + "/" + filename;
+  if (save(path, output_text)) {
     m_info_output.set_text("Save in " + m_path + " ... " + filename);
   } else {
     m_info_output.set_text("There was something wrong!");
@@ -121,13 +138,14 @@ void Terminal::on_menu_file_saveAs() {
   }
 
   m_pFileDialog->show();
-  on_menu_file_save();
 }
 
 void Terminal::on_file_dialog_response(int response_id) {
+
   if (response_id == Gtk::ResponseType::ACCEPT) {
     if (auto file = m_pFileDialog->get_file()) {
       m_path = file->get_path();
+      on_menu_file_save();
     }
   }
   m_pFileDialog->hide();
@@ -135,7 +153,22 @@ void Terminal::on_file_dialog_response(int response_id) {
 
 void Terminal::on_menu_file_quit() { close(); }
 
-void Terminal::on_menu_help_about() {}
+void Terminal::on_menu_help_about() {
+  if (!m_pAboutDialog) {
+    m_pAboutDialog.reset(new Gtk::AboutDialog);
+    m_pAboutDialog->set_transient_for(*this);
+    m_pAboutDialog->set_hide_on_close();
+    m_pAboutDialog->set_program_name("Terminal App");
+    m_pAboutDialog->set_version("1.0.0");
+    m_pAboutDialog->set_copyright("jpenrici");
+    m_pAboutDialog->set_comments("Simple application using Gtkmm 4.");
+    m_pAboutDialog->set_license("LGPL");
+    m_pAboutDialog->set_website("http://www.gtkmm.org");
+    m_pAboutDialog->set_website_label("gtkmm website");
+    m_pAboutDialog->set_authors(std::vector<Glib::ustring>{"jpenrici"});
+  }
+  m_pAboutDialog->present();
+}
 
 void Terminal::on_menu_tools_clear(int operation) {
   // 0 (input and output), 1 (input), 2 (output)
@@ -155,6 +188,8 @@ void Terminal::setup_command_area() {
   m_info_output.set_label("");
 
   // Configure input area
+  m_command_input.set_left_margin(15);
+  m_command_input.set_top_margin(15);
   m_command_input.set_wrap_mode(Gtk::WrapMode::WORD_CHAR);
   m_command_input_buffer = m_command_input.get_buffer();
 
@@ -171,6 +206,8 @@ void Terminal::setup_command_area() {
   // Configure output area
   m_command_output.set_cursor_visible(false);
   m_command_output.set_editable(false);
+  m_command_output.set_left_margin(15);
+  m_command_output.set_top_margin(15);
   m_command_output.set_wrap_mode(Gtk::WrapMode::WORD_CHAR);
   m_command_output_buffer = m_command_output.get_buffer();
 
