@@ -1,3 +1,10 @@
+/*
+ * Reference:
+ *    https://www.gtkmm.org
+ *
+ * Requeriment
+ *    libgtkmm-4.0-dev (Linux)
+ */
 #ifndef TERMINAL_H
 #define TERMINAL_H
 
@@ -66,6 +73,7 @@ private:
   // Buffers
   Glib::RefPtr<Gtk::TextBuffer> m_command_input_buffer;
   Glib::RefPtr<Gtk::TextBuffer> m_command_output_buffer;
+  Glib::RefPtr<Gtk::TextTag> m_input_tag;
 
   // Settings
   std::string m_path;
@@ -75,7 +83,8 @@ private:
 
   // Actions
   auto save(std::string path, std::string text) -> bool;
-  void on_file_dialog_response(int response_id);
 };
+
+auto terminal(int argc, char *argv[]) -> int;
 
 #endif // TERMINAL_H

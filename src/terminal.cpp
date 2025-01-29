@@ -1,3 +1,10 @@
+/*
+ * Reference:
+ *    https://www.gtkmm.org
+ *
+ * Requeriment
+ *    libgtkmm-4.0-dev (Linux)
+ */
 #include "terminal.h"
 
 #include <giomm.h>
@@ -89,6 +96,7 @@ void Terminal::create_menu() {
 }
 
 void Terminal::on_menu_file_save() {
+  // Get texts
   auto input_text = m_command_input_buffer->get_text();
   auto output_text = m_command_output_buffer->get_text();
 
@@ -127,28 +135,24 @@ void Terminal::on_menu_file_save() {
 void Terminal::on_menu_file_saveAs() {
   if (!m_pFileDialog) {
     m_pFileDialog.reset(new Gtk::FileChooserDialog(
-        "Select Directory", Gtk::FileChooser::Action::SELECT_FOLDER));
+        "Select Folder", Gtk::FileChooser::Action::SELECT_FOLDER));
     m_pFileDialog->set_transient_for(*this);
     m_pFileDialog->set_modal(true);
     m_pFileDialog->set_hide_on_close(true);
     m_pFileDialog->add_button("_Cancel", Gtk::ResponseType::CANCEL);
     m_pFileDialog->add_button("_Select", Gtk::ResponseType::ACCEPT);
-    m_pFileDialog->signal_response().connect(
-        sigc::mem_fun(*this, &Terminal::on_file_dialog_response));
+    m_pFileDialog->signal_response().connect([this](int response_id) {
+      if (response_id == Gtk::ResponseType::ACCEPT) {
+        if (auto file = m_pFileDialog->get_file()) {
+          m_path = file->get_path();
+          on_menu_file_save();
+        }
+      }
+      m_pFileDialog->hide();
+    });
   }
 
   m_pFileDialog->show();
-}
-
-void Terminal::on_file_dialog_response(int response_id) {
-
-  if (response_id == Gtk::ResponseType::ACCEPT) {
-    if (auto file = m_pFileDialog->get_file()) {
-      m_path = file->get_path();
-      on_menu_file_save();
-    }
-  }
-  m_pFileDialog->hide();
 }
 
 void Terminal::on_menu_file_quit() { close(); }
@@ -161,7 +165,7 @@ void Terminal::on_menu_help_about() {
     m_pAboutDialog->set_program_name("Terminal App");
     m_pAboutDialog->set_version("1.0.0");
     m_pAboutDialog->set_copyright("jpenrici");
-    m_pAboutDialog->set_comments("Simple application using Gtkmm 4.");
+    m_pAboutDialog->set_comments("Simple application using GTKmm 4.");
     m_pAboutDialog->set_license("LGPL");
     m_pAboutDialog->set_website("http://www.gtkmm.org");
     m_pAboutDialog->set_website_label("gtkmm website");
@@ -189,9 +193,18 @@ void Terminal::setup_command_area() {
 
   // Configure input area
   m_command_input.set_left_margin(15);
+  m_command_input.set_monospace(true);
   m_command_input.set_top_margin(15);
   m_command_input.set_wrap_mode(Gtk::WrapMode::WORD_CHAR);
   m_command_input_buffer = m_command_input.get_buffer();
+
+  auto tag = m_command_input_buffer->create_tag();
+  tag->property_foreground() = "#00FF00"; // Define green color
+
+  m_command_input_buffer->signal_changed().connect([this, tag]() {
+    m_command_input_buffer->apply_tag(tag, m_command_input_buffer->begin(),
+                                      m_command_input_buffer->end());
+  });
 
   m_input_scroll.set_child(m_command_input);
   m_input_scroll.set_vexpand(true);
@@ -207,6 +220,7 @@ void Terminal::setup_command_area() {
   m_command_output.set_cursor_visible(false);
   m_command_output.set_editable(false);
   m_command_output.set_left_margin(15);
+  m_command_output.set_monospace(true);
   m_command_output.set_top_margin(15);
   m_command_output.set_wrap_mode(Gtk::WrapMode::WORD_CHAR);
   m_command_output_buffer = m_command_output.get_buffer();
@@ -283,7 +297,12 @@ void Terminal::append_to_output(const std::string &text, bool is_error) {
     }
     m_command_output_buffer->insert_with_tag(end, text, tag);
   } else {
-    m_command_output_buffer->insert(end, text + "\n");
+    auto tag = m_command_output_buffer->get_tag_table()->lookup("ok");
+    if (!tag) {
+      tag = m_command_output_buffer->create_tag("ok");
+      tag->property_foreground() = "#95A3FC";
+    }
+    m_command_output_buffer->insert_with_tag(end, text + "\n", tag);
   }
 
   // Scroll to end
@@ -311,4 +330,12 @@ auto Terminal::save(std::string path, std::string text) -> bool {
     }
   }
   return true;
+}
+
+// Main
+auto terminal(int argc, char *argv[]) -> int {
+  auto app = Gtk::Application::create("com.gtkmm.app.terminal");
+  const int status = app->make_window_and_run<Terminal>(argc, argv);
+
+  return status;
 }
