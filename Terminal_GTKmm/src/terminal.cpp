@@ -12,8 +12,8 @@
 #include <giomm.h>
 #include <glib.h>
 #include <gtkmm-4.0/gtkmm/application.h>
-
-#include <Python.h>
+#include <gtkmm-4.0/gtkmm/filechooserdialog.h>
+#include <gtkmm-4.0/gtkmm/messagedialog.h>
 
 #include <fstream>
 
@@ -23,13 +23,6 @@ Terminal::Terminal() {
 
   setup_interface();
   setup_signals();
-}
-
-Terminal::~Terminal() {
-  // Release the Python Interpreter before exiting.
-  if (Py_IsInitialized()) {
-    Py_FinalizeEx();
-  }
 }
 
 void Terminal::setup_interface() {
@@ -48,7 +41,7 @@ void Terminal::setup_interface() {
   set_child(m_main_box);
 
   // Set Interpreter
-  on_menu_interpreter(Interpreter::DEFAULT);
+  on_menu_interpreter(Interpreter::Languages::BASH);
 }
 
 void Terminal::setup_signals() {
@@ -66,6 +59,7 @@ void Terminal::create_menu() {
 
   // File menu
   auto file_menu = Gio::Menu::create();
+  file_menu->append("Open", "app.open");
   file_menu->append("Save", "app.save");
   file_menu->append("Save as", "app.saveas");
   file_menu->append("Quit", "app.quit");
@@ -75,13 +69,14 @@ void Terminal::create_menu() {
   auto tools_menu = Gio::Menu::create();
 
   auto clear_menu = Gio::Menu::create();
+  clear_menu->append("Clear All", "app.clear");
   clear_menu->append("Clear Input", "app.clear_input");
   clear_menu->append("Clear Output", "app.clear_output");
-  clear_menu->append("Clear All", "app.clear");
 
   auto interpreter_menu = Gio::Menu::create();
   interpreter_menu->append("Bash", "app.interpreter_bash");
   interpreter_menu->append("Python", "app.interpreter_python");
+  interpreter_menu->append("Lua", "app.interpreter_lua");
 
   tools_menu->append("Execute", "app.run");
   tools_menu->append_submenu("Interpreter", interpreter_menu);
@@ -101,6 +96,7 @@ void Terminal::create_menu() {
   auto app = Gtk::Application::get_default();
   if (app) {
     // File
+    app->add_action("open", sigc::mem_fun(*this, &Terminal::on_menu_file_open));
     app->add_action("save", sigc::mem_fun(*this, &Terminal::on_menu_file_save));
     app->add_action("saveas",
                     sigc::mem_fun(*this, &Terminal::on_menu_file_saveAs));
@@ -110,11 +106,15 @@ void Terminal::create_menu() {
     app->add_action(
         "interpreter_bash",
         sigc::bind(sigc::mem_fun(*this, &Terminal::on_menu_interpreter),
-                   Interpreter::BASH));
+                   Interpreter::Languages::BASH));
     app->add_action(
         "interpreter_python",
         sigc::bind(sigc::mem_fun(*this, &Terminal::on_menu_interpreter),
-                   Interpreter::PYTHON));
+                   Interpreter::Languages::PYTHON));
+    app->add_action(
+        "interpreter_lua",
+        sigc::bind(sigc::mem_fun(*this, &Terminal::on_menu_interpreter),
+                   Interpreter::Languages::LUA));
     // Clear
     app->add_action(
         "clear",
@@ -128,6 +128,66 @@ void Terminal::create_menu() {
     app->add_action("about",
                     sigc::mem_fun(*this, &Terminal::on_menu_help_about));
   }
+}
+
+void Terminal::on_menu_file_open() {
+
+  if (!m_pFileDialog) {
+    // Filters
+    auto filter_text = Gtk::FileFilter::create();
+    filter_text->set_name("Script Files");
+    filter_text->add_pattern("*.py");
+    filter_text->add_pattern("*.lua");
+    filter_text->add_pattern("*.sh");
+    // Dialog
+    m_pFileDialog.reset(new Gtk::FileChooserDialog(
+        "Select a script file", Gtk::FileChooser::Action::OPEN));
+    m_pFileDialog->set_transient_for(*this);
+    m_pFileDialog->set_modal(true);
+    m_pFileDialog->set_hide_on_close(true);
+    m_pFileDialog->add_button("_Cancel", Gtk::ResponseType::CANCEL);
+    m_pFileDialog->add_button("_Open", Gtk::ResponseType::ACCEPT);
+    m_pFileDialog->add_filter(filter_text);
+    m_pFileDialog->signal_response().connect([this](int response_id) {
+      if (response_id == Gtk::ResponseType::ACCEPT) {
+        if (auto f = m_pFileDialog->get_file()) {
+          m_path = f->get_path();
+          // Read file content
+          std::ifstream file(m_path);
+          if (!file) {
+            Gtk::MessageDialog error_dialog(*this, "Failed to open file.",
+                                            false, Gtk::MessageType::ERROR);
+            error_dialog.set_modal(true);
+            error_dialog.present();
+            return;
+          }
+          // Determine interpreter by file extension
+          if (m_path.ends_with(".py")) {
+            m_interpreter_type = Interpreter::Languages::PYTHON;
+          } else if (m_path.ends_with(".lua")) {
+            m_interpreter_type = Interpreter::Languages::LUA;
+          } else if (m_path.ends_with(".sh")) {
+            m_interpreter_type = Interpreter::Languages::BASH;
+          } else {
+            Gtk::MessageDialog error_dialog(*this, "Unsupported file type.",
+                                            false, Gtk::MessageType::ERROR);
+            error_dialog.set_modal(true);
+            error_dialog.present();
+            return;
+          }
+          // Updates
+          std::ostringstream buffer;
+          buffer << file.rdbuf();
+          on_menu_tools_clear();
+          on_menu_interpreter(m_interpreter_type);
+          m_command_input_buffer->set_text(buffer.str());
+        }
+      }
+      m_pFileDialog->hide();
+    });
+  }
+
+  m_pFileDialog->show();
 }
 
 void Terminal::on_menu_file_save() {
@@ -223,18 +283,10 @@ void Terminal::on_menu_tools_clear(int operation) {
 
 void Terminal::on_menu_interpreter(int interpreter_type) {
   m_interpreter_type = interpreter_type;
-  std::string interpreter = "Bash";
-  switch (m_interpreter_type) {
-  case Interpreter::BASH:
-    break;
-  case Interpreter::PYTHON:
-    interpreter = "Python";
-    break;
-  default:
-    m_interpreter_type = Interpreter::BASH;
-    break;
-  }
-  m_info_status_bar.set_text("Interpreter: " + interpreter);
+  std::string interpreter = Interpreter::name(interpreter_type);
+  m_info_status_bar.set_text(!interpreter.empty()
+                                 ? "Interpreter: " + interpreter
+                                 : "Undefined Interpreter");
 }
 
 void Terminal::setup_command_area() {
@@ -318,94 +370,7 @@ void Terminal::on_execute_command() {
 }
 
 auto Terminal::execute_command(const std::string_view command) -> std::string {
-  if (m_interpreter_type == Interpreter::PYTHON) {
-    return execute_python(command);
-  }
-  return execute_bash(command);
-}
-
-auto Terminal::execute_bash(const std::string_view command) -> std::string {
-  std::array<char, 128> buffer;
-  std::string result;
-
-  // popen : pipe stream to or from a process (Standard C library)
-  FILE *pipe = popen(command.data(), "r");
-  if (!pipe) {
-    throw std::runtime_error("Failed to execute command");
-  }
-
-  while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
-    result += buffer.data();
-  }
-
-  auto status = pclose(pipe);
-  if (status != 0) {
-    throw std::runtime_error("Command execution failed with status " +
-                             std::to_string(status) + "\n");
-  }
-
-  return result;
-}
-
-auto Terminal::execute_python(const std::string_view command) -> std::string {
-  // Initializes the Python interpreter (if not already initialized)
-  if (!Py_IsInitialized()) {
-    Py_Initialize();
-  }
-
-  // Creates context dictionary for globals and locals
-  PyObject *main_module =
-      PyImport_AddModule("__main__"); // No DECREF, it's singleton
-  PyObject *main_dict = PyModule_GetDict(main_module);
-
-  // Redirect sys.stdout to capture Python output
-  PyObject *sys_module = PyImport_ImportModule("sys");
-  PyObject *io_module = PyImport_ImportModule("io");
-
-  if (!sys_module || !io_module) {
-    PyErr_Print();
-    return "Error: Failed to import sys or io modules.\n";
-  }
-
-  PyObject *string_io = PyObject_CallMethod(io_module, "StringIO", NULL);
-  if (!string_io) {
-    PyErr_Print();
-    Py_DECREF(sys_module);
-    Py_DECREF(io_module);
-    return "Error: Failed to create StringIO.\n";
-  }
-
-  PyObject_SetAttrString(sys_module, "stdout", string_io);
-  PyObject_SetAttrString(sys_module, "stderr", string_io);
-
-  // Execute the Python code
-  PyObject *py_result =
-      PyRun_String(command.data(), Py_file_input, main_dict, main_dict);
-
-  if (!py_result) {
-    PyErr_Print();
-  } else {
-    Py_DECREF(py_result);
-  }
-
-  // Retrieves the contents of StringIO
-  PyObject *output = PyObject_CallMethod(string_io, "getvalue", NULL);
-  std::string result;
-
-  if (output && PyUnicode_Check(output)) {
-    result = PyUnicode_AsUTF8(output);
-  } else {
-    result = "Error: Could not retrieve output.\n";
-  }
-
-  // Release references
-  Py_XDECREF(output);
-  Py_DECREF(string_io);
-  Py_DECREF(sys_module);
-  Py_DECREF(io_module);
-
-  // Não finalizamos o interpretador globalmente para manter consistência
-  return result;
+  return Interpreter::execute_command(command, m_interpreter_type);
 }
 
 void Terminal::append_to_output(const std::string_view text, bool is_error) {

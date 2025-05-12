@@ -7,8 +7,8 @@
  *    libgtkmm-4.0-dev (Linux)
  *    python.h
  */
-#ifndef TERMINAL_H
-#define TERMINAL_H
+#ifndef TERMINAL_HPP
+#define TERMINAL_HPP
 
 #include <gtkmm-4.0/gtkmm/aboutdialog.h>
 #include <gtkmm-4.0/gtkmm/box.h>
@@ -21,11 +21,13 @@
 #include <gtkmm-4.0/gtkmm/textview.h>
 #include <gtkmm-4.0/gtkmm/window.h>
 
+#include "interpreter.hpp"
+
 class Terminal : public Gtk::Window {
 
 public:
     Terminal();
-    ~Terminal();
+    virtual ~Terminal() = default;
 
 protected:
     // Interface setup
@@ -36,8 +38,6 @@ protected:
 
     // Command handling
     auto execute_command(const std::string_view command) -> std::string;
-    [[ nodiscard ]] auto execute_bash(const std::string_view command) -> std::string;
-    [[ nodiscard ]] auto execute_python(const std::string_view command) -> std::string;
     void append_to_output(const std::string_view text, bool is_error = false);
     void on_execute_command();
 
@@ -47,19 +47,14 @@ protected:
 
     // Menu actions
     void on_menu_file_quit();
+    void on_menu_file_open();
     void on_menu_file_save();
     void on_menu_file_saveAs();
     void on_menu_help_about();
     void on_menu_tools_clear(int operation = 0);
-    void on_menu_interpreter(int interpreter_type = Interpreter::DEFAULT);
+    void on_menu_interpreter(int interpreter_type = Interpreter::Languages::DEFAULT);
 
 private:
-    enum Interpreter {
-        BASH,
-        PYTHON,
-        DEFAULT
-    };
-
     int m_interpreter_type;
 
     // UI Components
@@ -102,4 +97,4 @@ private:
 
 auto terminal(int argc, char *argv[]) -> int;
 
-#endif // TERMINAL_H
+#endif // TERMINAL_HPP

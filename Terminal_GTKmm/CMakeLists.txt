@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.25)
 
 project(TerminalApp LANGUAGES CXX)
 
-set(PROGRAM_NAME "TerminalApp2")
+set(PROGRAM_NAME "TerminalApp")
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -35,6 +35,17 @@ if (Python3_FOUND)
     message(STATUS "  Libraries: ${Python3_LIBRARIES}")
 else()
     message(FATAL_ERROR "Python3 not found. Please ensure the Python3 library is installed on your system.")
+endif()
+
+find_package(Lua REQUIRED)
+if (Lua_FOUND)
+    include_directories(${LUA_INCLUDE_DIR})
+    target_link_libraries(${PROGRAM_NAME} PRIVATE ${LUA_LIBRARIES})
+    message(STATUS "Lua found:")
+    message(STATUS "  Directory: ${LUA_INCLUDE_DIR}")
+    message(STATUS "  Libraries: ${LUA_LIBRARIES}")
+else()
+    message(FATAL_ERROR "Lua not found. Please ensure the Lua library is installed on your system.")
 endif()
 
 install(TARGETS ${PROGRAM_NAME}
