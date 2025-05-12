@@ -1,15 +1,19 @@
 /*
- * Reference:
+ * References:
  *    https://www.gtkmm.org
+ *    https://docs.python.org/3/extending/index.html
  *
  * Requeriment
  *    libgtkmm-4.0-dev (Linux)
+ *    python.h
  */
-#include "terminal.h"
+#include "terminal.hpp"
 
 #include <giomm.h>
 #include <glib.h>
 #include <gtkmm-4.0/gtkmm/application.h>
+
+#include <Python.h>
 
 #include <fstream>
 
@@ -19,6 +23,13 @@ Terminal::Terminal() {
 
   setup_interface();
   setup_signals();
+}
+
+Terminal::~Terminal() {
+  // Release the Python Interpreter before exiting.
+  if (Py_IsInitialized()) {
+    Py_FinalizeEx();
+  }
 }
 
 void Terminal::setup_interface() {
@@ -35,14 +46,17 @@ void Terminal::setup_interface() {
 
   // Set the main container
   set_child(m_main_box);
+
+  // Set Interpreter
+  on_menu_interpreter(Interpreter::DEFAULT);
 }
 
 void Terminal::setup_signals() {
   // Button events
-  m_btn_input_clear.signal_clicked().connect(
-      sigc::bind(sigc::mem_fun(*this, &Terminal::on_menu_tools_clear), 1));
   m_btn_input_execute.signal_clicked().connect(
       sigc::mem_fun(*this, &Terminal::on_execute_command));
+  m_btn_input_clear.signal_clicked().connect(
+      sigc::bind(sigc::mem_fun(*this, &Terminal::on_menu_tools_clear), 1));
   m_btn_output_clear.signal_clicked().connect(
       sigc::bind(sigc::mem_fun(*this, &Terminal::on_menu_tools_clear), 2));
 }
@@ -57,12 +71,22 @@ void Terminal::create_menu() {
   file_menu->append("Quit", "app.quit");
   menu_model->append_submenu("File", file_menu);
 
-  // Execute menu
+  // Tools menu
   auto tools_menu = Gio::Menu::create();
+
+  auto clear_menu = Gio::Menu::create();
+  clear_menu->append("Clear Input", "app.clear_input");
+  clear_menu->append("Clear Output", "app.clear_output");
+  clear_menu->append("Clear All", "app.clear");
+
+  auto interpreter_menu = Gio::Menu::create();
+  interpreter_menu->append("Bash", "app.interpreter_bash");
+  interpreter_menu->append("Python", "app.interpreter_python");
+
   tools_menu->append("Execute", "app.run");
-  tools_menu->append("Clear Input", "app.clear_input");
-  tools_menu->append("Clear Output", "app.clear_output");
-  tools_menu->append("Clear All", "app.clear");
+  tools_menu->append_submenu("Interpreter", interpreter_menu);
+  tools_menu->append_submenu("Clear", clear_menu);
+
   menu_model->append_submenu("Tools", tools_menu);
 
   // Help menu
@@ -76,11 +100,22 @@ void Terminal::create_menu() {
   // Actions
   auto app = Gtk::Application::get_default();
   if (app) {
+    // File
     app->add_action("save", sigc::mem_fun(*this, &Terminal::on_menu_file_save));
     app->add_action("saveas",
                     sigc::mem_fun(*this, &Terminal::on_menu_file_saveAs));
     app->add_action("quit", sigc::mem_fun(*this, &Terminal::on_menu_file_quit));
     app->add_action("run", sigc::mem_fun(*this, &Terminal::on_execute_command));
+    // Interpreter
+    app->add_action(
+        "interpreter_bash",
+        sigc::bind(sigc::mem_fun(*this, &Terminal::on_menu_interpreter),
+                   Interpreter::BASH));
+    app->add_action(
+        "interpreter_python",
+        sigc::bind(sigc::mem_fun(*this, &Terminal::on_menu_interpreter),
+                   Interpreter::PYTHON));
+    // Clear
     app->add_action(
         "clear",
         sigc::bind(sigc::mem_fun(*this, &Terminal::on_menu_tools_clear), 0));
@@ -186,6 +221,22 @@ void Terminal::on_menu_tools_clear(int operation) {
   }
 }
 
+void Terminal::on_menu_interpreter(int interpreter_type) {
+  m_interpreter_type = interpreter_type;
+  std::string interpreter = "Bash";
+  switch (m_interpreter_type) {
+  case Interpreter::BASH:
+    break;
+  case Interpreter::PYTHON:
+    interpreter = "Python";
+    break;
+  default:
+    m_interpreter_type = Interpreter::BASH;
+    break;
+  }
+  m_info_status_bar.set_text("Interpreter: " + interpreter);
+}
+
 void Terminal::setup_command_area() {
   // Configure label
   m_info_input.set_label("Enter the command:");
@@ -237,6 +288,9 @@ void Terminal::setup_command_area() {
   m_input_tool_box.append(m_btn_input_execute);
   m_output_tool_box.append(m_btn_output_clear);
 
+  // Status box
+  m_status_bar_box.append(m_info_status_bar);
+
   // Main box
   m_main_box.append(m_info_input);
   m_main_box.append(m_input_scroll);
@@ -244,6 +298,7 @@ void Terminal::setup_command_area() {
   m_main_box.append(m_info_output);
   m_main_box.append(m_output_scroll);
   m_main_box.append(m_output_tool_box);
+  m_main_box.append(m_status_bar_box);
 }
 
 void Terminal::on_execute_command() {
@@ -255,19 +310,26 @@ void Terminal::on_execute_command() {
 
   try {
     // Execute command and show output
-    auto output = execute_command(command);
+    auto output = execute_command(command.data());
     append_to_output(output);
   } catch (const std::runtime_error &e) {
     append_to_output(e.what(), true);
   }
 }
 
-auto Terminal::execute_command(const std::string &command) -> std::string {
+auto Terminal::execute_command(const std::string_view command) -> std::string {
+  if (m_interpreter_type == Interpreter::PYTHON) {
+    return execute_python(command);
+  }
+  return execute_bash(command);
+}
+
+auto Terminal::execute_bash(const std::string_view command) -> std::string {
   std::array<char, 128> buffer;
   std::string result;
 
   // popen : pipe stream to or from a process (Standard C library)
-  FILE *pipe = popen(command.c_str(), "r");
+  FILE *pipe = popen(command.data(), "r");
   if (!pipe) {
     throw std::runtime_error("Failed to execute command");
   }
@@ -285,7 +347,68 @@ auto Terminal::execute_command(const std::string &command) -> std::string {
   return result;
 }
 
-void Terminal::append_to_output(const std::string &text, bool is_error) {
+auto Terminal::execute_python(const std::string_view command) -> std::string {
+  // Initializes the Python interpreter (if not already initialized)
+  if (!Py_IsInitialized()) {
+    Py_Initialize();
+  }
+
+  // Creates context dictionary for globals and locals
+  PyObject *main_module =
+      PyImport_AddModule("__main__"); // No DECREF, it's singleton
+  PyObject *main_dict = PyModule_GetDict(main_module);
+
+  // Redirect sys.stdout to capture Python output
+  PyObject *sys_module = PyImport_ImportModule("sys");
+  PyObject *io_module = PyImport_ImportModule("io");
+
+  if (!sys_module || !io_module) {
+    PyErr_Print();
+    return "Error: Failed to import sys or io modules.\n";
+  }
+
+  PyObject *string_io = PyObject_CallMethod(io_module, "StringIO", NULL);
+  if (!string_io) {
+    PyErr_Print();
+    Py_DECREF(sys_module);
+    Py_DECREF(io_module);
+    return "Error: Failed to create StringIO.\n";
+  }
+
+  PyObject_SetAttrString(sys_module, "stdout", string_io);
+  PyObject_SetAttrString(sys_module, "stderr", string_io);
+
+  // Execute the Python code
+  PyObject *py_result =
+      PyRun_String(command.data(), Py_file_input, main_dict, main_dict);
+
+  if (!py_result) {
+    PyErr_Print();
+  } else {
+    Py_DECREF(py_result);
+  }
+
+  // Retrieves the contents of StringIO
+  PyObject *output = PyObject_CallMethod(string_io, "getvalue", NULL);
+  std::string result;
+
+  if (output && PyUnicode_Check(output)) {
+    result = PyUnicode_AsUTF8(output);
+  } else {
+    result = "Error: Could not retrieve output.\n";
+  }
+
+  // Release references
+  Py_XDECREF(output);
+  Py_DECREF(string_io);
+  Py_DECREF(sys_module);
+  Py_DECREF(io_module);
+
+  // Não finalizamos o interpretador globalmente para manter consistência
+  return result;
+}
+
+void Terminal::append_to_output(const std::string_view text, bool is_error) {
   auto end = m_command_output_buffer->end();
 
   if (is_error) {
@@ -295,14 +418,15 @@ void Terminal::append_to_output(const std::string &text, bool is_error) {
       tag = m_command_output_buffer->create_tag("error");
       tag->property_foreground() = "#FF0000";
     }
-    m_command_output_buffer->insert_with_tag(end, text, tag);
+    m_command_output_buffer->insert_with_tag(end, text.data(), tag);
   } else {
     auto tag = m_command_output_buffer->get_tag_table()->lookup("ok");
     if (!tag) {
       tag = m_command_output_buffer->create_tag("ok");
       tag->property_foreground() = "#95A3FC";
     }
-    m_command_output_buffer->insert_with_tag(end, text + "\n", tag);
+    std::string txt = text.data();
+    m_command_output_buffer->insert_with_tag(end, txt + "\n", tag);
   }
 
   // Scroll to end
