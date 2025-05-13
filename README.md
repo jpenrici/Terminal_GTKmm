@@ -13,7 +13,7 @@ Simple GTKmm Terminal for experimentation.
     * Dedicated input and output areas.
     * File Operations.
 
-### Prerequisites
+## Prerequisites
 
 To build and run this project, you need the following:
 
@@ -26,7 +26,7 @@ To build and run this project, you need the following:
 * **Lua Development Libraries:**
     * On **Debian/Ubuntu**: `sudo apt install liblua5.3-dev` (or `liblua5.4-dev` depending on your system's Lua version)
 
-### Building the Project
+## Building the Project
 
 1.  **Clone the repository:**
     ```bash
