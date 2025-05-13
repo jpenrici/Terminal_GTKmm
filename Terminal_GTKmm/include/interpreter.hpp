@@ -2,10 +2,12 @@
  * References:
  *    https://www.gtkmm.org
  *    https://docs.python.org/3/extending/index.html
+ *    https://www.lua.org/docs.html
  *
  * Requeriment
  *    libgtkmm-4.0-dev (Linux)
  *    python.h
+ *    lua
  */
 #ifndef INTERPRETER_HPP
 #define INTERPRETER_HPP
@@ -32,11 +34,7 @@ public:
     [[ nodiscard ]] static auto execute_command(const std::string_view command, size_t number) -> std::string;
 
 private:
-    std::vector<std::string> names{
-        "", "Bash", "Python", "Lua"
-    };
-
-    auto language(int index) -> std::string;
+    static const std::vector<std::string> s_names;
 
     [[ nodiscard ]] static auto execute_bash(const std::string_view command) -> std::string;
     [[ nodiscard ]] static auto execute_python(const std::string_view command) -> std::string;

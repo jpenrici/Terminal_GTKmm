@@ -2,10 +2,12 @@
  * References:
  *    https://www.gtkmm.org
  *    https://docs.python.org/3/extending/index.html
+ *    https://www.lua.org/docs.html
  *
  * Requeriment
  *    libgtkmm-4.0-dev (Linux)
  *    python.h
+ *    lua
  */
 #ifndef TERMINAL_HPP
 #define TERMINAL_HPP
@@ -29,34 +31,7 @@ public:
     Terminal();
     virtual ~Terminal() = default;
 
-protected:
-    // Interface setup
-    void create_menu();
-    void setup_command_area();
-    void setup_interface();
-    void setup_signals();
-
-    // Command handling
-    auto execute_command(const std::string_view command) -> std::string;
-    void append_to_output(const std::string_view text, bool is_error = false);
-    void on_execute_command();
-
-    // Buttons handling
-    void on_btn_input_clear_clicked();
-    void on_btn_output_clear_clicked();
-
-    // Menu actions
-    void on_menu_file_quit();
-    void on_menu_file_open();
-    void on_menu_file_save();
-    void on_menu_file_saveAs();
-    void on_menu_help_about();
-    void on_menu_tools_clear(int operation = 0);
-    void on_menu_interpreter(int interpreter_type = Interpreter::Languages::DEFAULT);
-
 private:
-    int m_interpreter_type;
-
     // UI Components
     Gtk::Box m_main_box{Gtk::Orientation::VERTICAL};
     Gtk::Box m_input_tool_box{Gtk::Orientation::HORIZONTAL};
@@ -85,14 +60,38 @@ private:
     Glib::RefPtr<Gtk::TextBuffer> m_command_output_buffer;
     Glib::RefPtr<Gtk::TextTag> m_input_tag;
 
+    // Interface setup
+    void create_menu();
+    void setup_command_area();
+    void setup_interface();
+    void setup_signals();
+
+    // Command handling
+    auto execute_command(const std::string_view command) -> std::string;
+    void append_to_output(const std::string_view text, bool is_error = false);
+    void on_execute_command();
+
+    // Buttons handling
+    void on_btn_input_clear_clicked();
+    void on_btn_output_clear_clicked();
+
+    // Menu actions
+    void on_menu_file_quit();
+    void on_menu_file_open();
+    void on_menu_file_save();
+    void on_menu_file_saveAs();
+    void on_menu_help_about();
+    void on_menu_tools_clear(int operation = 0);
+    void on_menu_interpreter(int interpreter_type = Interpreter::Languages::DEFAULT);
+
+    // Export
+    auto save(std::string path, std::string text) -> bool;
+
     // Settings
     std::string m_path;
+    int m_interpreter_type;
 
-    static constexpr size_t MAX_HISTORY_SIZE = 1000;
     static constexpr size_t MAX_OUTPUT_BUFFER_SIZE = 100000;
-
-    // Actions
-    auto save(std::string path, std::string text) -> bool;
 };
 
 auto terminal(int argc, char *argv[]) -> int;

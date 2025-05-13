@@ -2,10 +2,12 @@
  * References:
  *    https://www.gtkmm.org
  *    https://docs.python.org/3/extending/index.html
+ *    https://www.lua.org/docs.html
  *
  * Requeriment
  *    libgtkmm-4.0-dev (Linux)
  *    python.h
+ *    lua
  */
 #include "terminal.hpp"
 
@@ -364,7 +366,7 @@ void Terminal::on_execute_command() {
     // Execute command and show output
     auto output = execute_command(command.data());
     append_to_output(output);
-  } catch (const std::runtime_error &e) {
+  } catch (const std::exception &e) {
     append_to_output(e.what(), true);
   }
 }
